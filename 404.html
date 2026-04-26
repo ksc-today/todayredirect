@@ -1,46 +1,164 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
   <html lang="ko">
   <head>
     <meta charset="UTF-8">
-    <title>오늘은.</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>
-      (function () {
-        var path = window.location.pathname;
-        var match = path.match(/^\/share\/([^\/]+)\/?$/);
-        if (!match) return;  // /share/* 가 아니면 그냥 404 화면
+    <title>오늘은.</title>
 
-        var payload = match[1];
-        var pkg = 'com.ssavice.today';
-        var fallbackUrl =
-          'https://play.google.com/store/apps/details?id=' + pkg;
+    <meta property="og:title" content="오늘은. — 노트 공유">
+    <meta property="og:description" content="누군가 당신에게 할 일 목록을 보냈어요. 오늘은. 앱에서 받아보세요.">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="ko_KR">
 
-        // Android 만 intent:// 스킴 시도 — iOS/desktop 은 fallback 페이지에 머무름.
-        var ua = navigator.userAgent || '';
-        if (/Android/i.test(ua)) {
-          var intentUrl =
-            'intent://share/' + encodeURIComponent(payload) +
-            '#Intent;scheme=https;' +
-            'package=' + pkg + ';' +
-            'S.browser_fallback_url=' + encodeURIComponent(fallbackUrl) + ';' +
-            'end';
-          window.location.replace(intentUrl);
-        }
-      })();
-    </script>
     <style>
-      body{font-family:-apple-system,sans-serif;background:#F5EFE4;color:#3D2817;
-           text-align:center;padding:60px 20px;line-height:1.6}
-      a{color:#7A2A1F}
+      body{font-family:-apple-system,'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+           background:#F5EFE4;color:#3D2817;text-align:center;padding:60px 20px;line-height:1.5;margin:0}
+      h1{font-size:22px;margin:0;font-weight:600;letter-spacing:-0.3px;color:#7A2A1F}
+      .preview{margin:36px auto 28px;max-width:520px}
+      .note-title{font-size:30px;font-weight:600;word-break:keep-all;color:#3D2817;
+                  opacity:0;transition:opacity 240ms ease}
+      .note-title.show{opacity:1}
+      .note-meta{margin-top:8px;color:#8B6F4E;font-size:14px;
+                 opacity:0;transition:opacity 240ms ease}
+      .note-meta.show{opacity:1}
+      .help{color:#8B6F4E;font-size:15px;margin-bottom:24px}
+      a.cta{display:inline-block;background:#7A2A1F;color:#F5EFE4;
+            padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:600;
+            font-size:15px}
+      a.cta:hover{opacity:0.92}
     </style>
   </head>
   <body>
-    <h2>오늘은.</h2>
-    <p>공유받은 노트를 열려면 앱이 필요해요.</p>
-    <p>
-      <a id="store" href="https://play.google.com/store/apps/details?id=com.ssavice.today">
-        Play Store 에서 받기
-      </a>
-    </p>
+    <h1>오늘은.</h1>
+    <div class="preview">
+      <div id="note-title" class="note-title">&nbsp;</div>
+      <div id="note-meta" class="note-meta">&nbsp;</div>
+    </div>
+    <p class="help">이 노트를 받으려면 앱이 필요해요.</p>
+    <a class="cta" href="https://play.google.com/store/apps/details?id=com.ssavice.today">
+      Play Store 에서 받기
+    </a>
+
+    <script>
+    (function () {
+      const PKG = 'com.ssavice.today';
+      const FALLBACK_URL = 'https://play.google.com/store/apps/details?id=' + PKG;
+
+      const match = window.location.pathname.match(/^\/todayredirect\/share\/([^\/]+)\/?$/);
+      if (!match) return;
+      const payload = match[1];
+      const isAndroid = /Android/i.test(navigator.userAgent || '');
+
+      if (isAndroid) {
+        // Android: 앱 있으면 즉시 진입 (intent: 스킴), 없으면 fallback Play Store.
+        const intentUrl =
+          'intent://share/' + encodeURIComponent(payload) +
+          '#Intent;scheme=https;package=' + PKG +
+          ';S.browser_fallback_url=' + encodeURIComponent(FALLBACK_URL) + ';end';
+        window.location.replace(intentUrl);
+        return;
+      }
+
+      // 비-Android (iOS / 데스크톱) — 페이지에 노트 제목 + 개수 표시.
+      decodeAndShow(payload).catch(function () { /* 손상 / 미지원 버전: 일반 안내만 */ });
+    })();
+
+    async function decodeAndShow(payload) {
+      const compressed = urlSafeB64ToBytes(payload);
+      const cborBytes = await gunzip(compressed);
+      const dto = parseCbor(cborBytes);
+      if (!dto || typeof dto !== 'object') return;
+
+      const title = typeof dto.title === 'string' ? dto.title.trim() : '';
+      const itemCount = Array.isArray(dto.items) ? dto.items.length : 0;
+      if (!title) return;
+
+      const t = document.getElementById('note-title');
+      const m = document.getElementById('note-meta');
+      t.textContent = title;
+      t.classList.add('show');
+      m.textContent = '할 일 ' + itemCount + '개';
+      m.classList.add('show');
+
+      // 페이지 타이틀도 갱신 — 데스크톱 브라우저 탭에 표시.
+      document.title = title + ' · 오늘은.';
+    }
+
+    // ---- URL-safe Base64 → Uint8Array ----
+    function urlSafeB64ToBytes(s) {
+      s = s.replace(/-/g, '+').replace(/_/g, '/');
+      while (s.length % 4) s += '=';
+      const raw = atob(s);
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out;
+    }
+
+    // ---- Native gunzip (Chrome 80+, Firefox 113+, Safari 17+) ----
+    async function gunzip(bytes) {
+      const ds = new DecompressionStream('gzip');
+      const w = ds.writable.getWriter();
+      w.write(bytes); w.close();
+      const r = ds.readable.getReader();
+      const chunks = []; let total = 0;
+      while (true) {
+        const { value, done } = await r.read();
+        if (done) break;
+        chunks.push(value); total += value.length;
+      }
+      const out = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) { out.set(c, off); off += c.length; }
+      return out;
+    }
+
+    // ---- Minimal CBOR decoder (matches kotlinx-serialization-cbor default:
+    //      definite-length, string-keyed maps for @Serializable classes) ----
+    function parseCbor(bytes) {
+      let i = 0;
+      function readArg(b) {
+        const a = b & 0x1F;
+        if (a < 24) return a;
+        if (a === 24) return bytes[i++];
+        if (a === 25) { const v = (bytes[i] << 8) | bytes[i+1]; i += 2; return v; }
+        if (a === 26) {
+          const v = ((bytes[i] << 24) | (bytes[i+1] << 16) | (bytes[i+2] << 8) | bytes[i+3]) >>> 0;
+          i += 4; return v;
+        }
+        if (a === 27) { i += 8; return 0; /* 8-byte uint — payload 작아서 0 으로 충분 */ }
+        throw new Error('cbor unsupported arg ' + a);
+      }
+      function read() {
+        const b = bytes[i++];
+        const major = b >> 5;
+        if ((b & 0x1F) === 31) throw new Error('cbor indefinite-length unsupported');
+        const arg = readArg(b);
+        if (major === 0) return arg;
+        if (major === 1) return -1 - arg;
+        if (major === 2) { const buf = bytes.slice(i, i + arg); i += arg; return buf; }
+        if (major === 3) {
+          const buf = bytes.slice(i, i + arg); i += arg;
+          return new TextDecoder('utf-8').decode(buf);
+        }
+        if (major === 4) {
+          const arr = []; for (let j = 0; j < arg; j++) arr.push(read()); return arr;
+        }
+        if (major === 5) {
+          const m = {};
+          for (let j = 0; j < arg; j++) { const k = read(); m[k] = read(); }
+          return m;
+        }
+        if (major === 6) return read(); // tag — unwrap
+        if (major === 7) {
+          if (arg === 22 || arg === 23) return null; // null / undefined
+          if (arg === 21) return true;
+          if (arg === 20) return false;
+          throw new Error('cbor major7 arg ' + arg);
+        }
+        throw new Error('cbor major ' + major);
+      }
+      return read();
+    }
+    </script>
   </body>
   </html>
