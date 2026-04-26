@@ -1,5 +1,34 @@
 <!DOCTYPE html>
   <html lang="ko">
+      <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>오늘은.</title>
+
+    <meta property="og:title" content="오늘은. — 노트 공유">
+    <meta property="og:description" content="누군가 당신에게 노트를 보냈어요. 앱에서 받아보세요.">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="ko_KR">
+
+    <style>
+      body{font-family:-apple-system,'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+           background:#F5EFE4;color:#3D2817;text-align:center;padding:60px 20px;line-height:1.5;margin:0}
+      h1{font-size:22px;margin:0;font-weight:600;letter-spacing:-0.3px;color:#7A2A1F}
+      .preview{margin:36px auto 28px;max-width:520px;min-height:96px}
+      .note-title{font-size:30px;font-weight:600;word-break:keep-all;color:#3D2817;
+                  opacity:0;transition:opacity 240ms ease}
+      .note-title.show{opacity:1}
+      .note-meta{margin-top:8px;color:#8B6F4E;font-size:14px;
+                 opacity:0;transition:opacity 240ms ease}
+      .note-meta.show{opacity:1}
+      .help{color:#8B6F4E;font-size:15px;margin-bottom:24px}
+      a.cta,button.cta{display:inline-block;background:#7A2A1F;color:#F5EFE4;
+            padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:600;
+            font-size:15px;border:none;cursor:pointer;font-family:inherit;margin:4px}
+      a.cta:hover,button.cta:hover{opacity:0.92}
+      .actions{display:flex;flex-direction:column;align-items:center;gap:8px}
+    </style>
+  </head>
   <body>
     <h2>오늘은.</h2>
     <p>공유받은 노트를 열려면 앱이 필요해요.</p>
