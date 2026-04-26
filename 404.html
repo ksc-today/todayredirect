@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
   <html lang="ko">
   <head>
     <meta charset="UTF-8">
@@ -6,7 +6,7 @@
     <title>오늘은.</title>
 
     <meta property="og:title" content="오늘은. — 노트 공유">
-    <meta property="og:description" content="누군가 당신에게 할 일 목록을 보냈어요. 오늘은. 앱에서 받아보세요.">
+    <meta property="og:description" content="누군가 당신에게 노트를 보냈어요. 앱에서 받아보세요.">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="ko_KR">
 
@@ -14,7 +14,7 @@
       body{font-family:-apple-system,'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
            background:#F5EFE4;color:#3D2817;text-align:center;padding:60px 20px;line-height:1.5;margin:0}
       h1{font-size:22px;margin:0;font-weight:600;letter-spacing:-0.3px;color:#7A2A1F}
-      .preview{margin:36px auto 28px;max-width:520px}
+      .preview{margin:36px auto 28px;max-width:520px;min-height:96px}
       .note-title{font-size:30px;font-weight:600;word-break:keep-all;color:#3D2817;
                   opacity:0;transition:opacity 240ms ease}
       .note-title.show{opacity:1}
@@ -22,10 +22,11 @@
                  opacity:0;transition:opacity 240ms ease}
       .note-meta.show{opacity:1}
       .help{color:#8B6F4E;font-size:15px;margin-bottom:24px}
-      a.cta{display:inline-block;background:#7A2A1F;color:#F5EFE4;
+      a.cta,button.cta{display:inline-block;background:#7A2A1F;color:#F5EFE4;
             padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:600;
-            font-size:15px}
-      a.cta:hover{opacity:0.92}
+            font-size:15px;border:none;cursor:pointer;font-family:inherit;margin:4px}
+      a.cta:hover,button.cta:hover{opacity:0.92}
+      .actions{display:flex;flex-direction:column;align-items:center;gap:8px}
     </style>
   </head>
   <body>
@@ -35,13 +36,18 @@
       <div id="note-meta" class="note-meta">&nbsp;</div>
     </div>
     <p class="help">이 노트를 받으려면 앱이 필요해요.</p>
-    <a class="cta" href="https://play.google.com/store/apps/details?id=com.ssavice.today">
-      Play Store 에서 받기
-    </a>
+    <div class="actions">
+      <button id="open-app" class="cta" style="display:none">앱에서 열기</button>
+      <a class="cta" href="https://play.google.com/store/apps/details?id=com.ssavice.today">
+        Play Store 에서 받기
+      </a>
+    </div>
 
     <script>
     (function () {
       const PKG = 'com.ssavice.today';
+      const HOST = 'ksc-today.github.io';
+      const PATH_PREFIX = '/todayredirect/share/';
       const FALLBACK_URL = 'https://play.google.com/store/apps/details?id=' + PKG;
 
       const match = window.location.pathname.match(/^\/todayredirect\/share\/([^\/]+)\/?$/);
@@ -49,18 +55,28 @@
       const payload = match[1];
       const isAndroid = /Android/i.test(navigator.userAgent || '');
 
+      // ★ 올바른 intent URI — host/path 가 실제 https URL 과 동일해야 우리 intent-filter 매칭.
+      const intentUrl =
+        'intent://' + HOST + PATH_PREFIX + encodeURIComponent(payload) +
+        '#Intent;scheme=https;package=' + PKG +
+        ';S.browser_fallback_url=' + encodeURIComponent(FALLBACK_URL) + ';end';
+
+      // 1) 페이로드 디코딩 → 요약 표시 (모든 플랫폼).
+      decodeAndShow(payload).catch(function () { /* 손상 / 미지원 버전: 일반 안내만 */ });
+
+      // 2) Android 만 자동 redirect — 디코딩한 요약을 잠깐 보여준 뒤 ~1.5s 후 intent 발사.
+      //    검증된 App Link 사용자는 페이지 로드 자체가 안 일어남 (시스템이 먼저 intercept).
+      //    즉 이 분기는 "Chrome 주소창 / 인앱 webview / 미설치" 같은 비-인터셉트 경로용.
       if (isAndroid) {
-        // Android: 앱 있으면 즉시 진입 (intent: 스킴), 없으면 fallback Play Store.
-        const intentUrl =
-          'intent://share/' + encodeURIComponent(payload) +
-          '#Intent;scheme=https;package=' + PKG +
-          ';S.browser_fallback_url=' + encodeURIComponent(FALLBACK_URL) + ';end';
-        window.location.replace(intentUrl);
-        return;
+        setTimeout(function () { window.location.replace(intentUrl); }, 1500);
       }
 
-      // 비-Android (iOS / 데스크톱) — 페이지에 노트 제목 + 개수 표시.
-      decodeAndShow(payload).catch(function () { /* 손상 / 미지원 버전: 일반 안내만 */ });
+      // 3) 사용자가 직접 트리거할 수 있는 버튼 (자동 redirect 가 차단되는 컨텍스트 대비).
+      if (isAndroid) {
+        const btn = document.getElementById('open-app');
+        btn.style.display = 'inline-block';
+        btn.addEventListener('click', function () { window.location.replace(intentUrl); });
+      }
     })();
 
     async function decodeAndShow(payload) {
@@ -79,12 +95,9 @@
       t.classList.add('show');
       m.textContent = '할 일 ' + itemCount + '개';
       m.classList.add('show');
-
-      // 페이지 타이틀도 갱신 — 데스크톱 브라우저 탭에 표시.
       document.title = title + ' · 오늘은.';
     }
 
-    // ---- URL-safe Base64 → Uint8Array ----
     function urlSafeB64ToBytes(s) {
       s = s.replace(/-/g, '+').replace(/_/g, '/');
       while (s.length % 4) s += '=';
@@ -94,7 +107,6 @@
       return out;
     }
 
-    // ---- Native gunzip (Chrome 80+, Firefox 113+, Safari 17+) ----
     async function gunzip(bytes) {
       const ds = new DecompressionStream('gzip');
       const w = ds.writable.getWriter();
@@ -112,8 +124,6 @@
       return out;
     }
 
-    // ---- Minimal CBOR decoder (matches kotlinx-serialization-cbor default:
-    //      definite-length, string-keyed maps for @Serializable classes) ----
     function parseCbor(bytes) {
       let i = 0;
       function readArg(b) {
@@ -125,7 +135,7 @@
           const v = ((bytes[i] << 24) | (bytes[i+1] << 16) | (bytes[i+2] << 8) | bytes[i+3]) >>> 0;
           i += 4; return v;
         }
-        if (a === 27) { i += 8; return 0; /* 8-byte uint — payload 작아서 0 으로 충분 */ }
+        if (a === 27) { i += 8; return 0; }
         throw new Error('cbor unsupported arg ' + a);
       }
       function read() {
@@ -148,9 +158,9 @@
           for (let j = 0; j < arg; j++) { const k = read(); m[k] = read(); }
           return m;
         }
-        if (major === 6) return read(); // tag — unwrap
+        if (major === 6) return read();
         if (major === 7) {
-          if (arg === 22 || arg === 23) return null; // null / undefined
+          if (arg === 22 || arg === 23) return null;
           if (arg === 21) return true;
           if (arg === 20) return false;
           throw new Error('cbor major7 arg ' + arg);
