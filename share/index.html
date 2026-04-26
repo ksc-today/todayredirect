@@ -196,8 +196,10 @@
     }
 
     // kotlinx-serialization-cbor 의 default 출력 (definite-length, string-key map) 만 처리.
-    function parseCbor(bytes) {
-      let i = 0;
+    function parseCbor(bytes) {                                                                                                                                                                                                     
+      let i = 0;                                         
+      const BREAK = 0xFF;
+
       function readArg(b) {
         const a = b & 0x1F;
         if (a < 24) return a;
@@ -207,13 +209,50 @@
           const v = ((bytes[i] << 24) | (bytes[i+1] << 16) | (bytes[i+2] << 8) | bytes[i+3]) >>> 0;
           i += 4; return v;
         }
-        if (a === 27) { i += 8; return 0; }
+        if (a === 27) { i += 8; return 0; }  // 8-byte uint — 우리 페이로드엔 안 나옴
         throw new Error('cbor unsupported arg ' + a);
       }
+
       function read() {
         const b = bytes[i++];
         const major = b >> 5;
-        if ((b & 0x1F) === 31) throw new Error('cbor indefinite-length unsupported');
+        const lowFive = b & 0x1F;
+
+        // ── indefinite-length: 컬렉션이 0xFF break 까지 ──────────────────
+        if (lowFive === 31) {
+          if (major === 4) { // array
+            const arr = [];
+            while (bytes[i] !== BREAK) arr.push(read());
+            i++; // consume break
+            return arr;
+          }
+          if (major === 5) { // map
+            const m = {};
+            while (bytes[i] !== BREAK) {
+              const k = read();
+              m[k] = read();
+            }
+            i++;
+            return m;
+          }
+          if (major === 2 || major === 3) { // bstr / tstr — chunked
+            const parts = [];
+            while (bytes[i] !== BREAK) parts.push(read());
+            i++;
+            if (major === 2) {
+              let total = 0;
+              for (const p of parts) total += p.length;
+              const out = new Uint8Array(total);
+              let off = 0;
+              for (const p of parts) { out.set(p, off); off += p.length; }
+              return out;
+            }
+            return parts.join('');
+          }
+          throw new Error('cbor indefinite-length not allowed for major ' + major);
+        }
+
+        // ── definite-length ─────────────────────────────────────────────
         const arg = readArg(b);
         if (major === 0) return arg;
         if (major === 1) return -1 - arg;
@@ -230,7 +269,7 @@
           for (let j = 0; j < arg; j++) { const k = read(); m[k] = read(); }
           return m;
         }
-        if (major === 6) return read();
+        if (major === 6) return read();  // tag — unwrap
         if (major === 7) {
           if (arg === 22 || arg === 23) return null;
           if (arg === 21) return true;
@@ -239,6 +278,7 @@
         }
         throw new Error('cbor major ' + major);
       }
+
       return read();
     }
     </script>
