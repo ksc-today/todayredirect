@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+  <html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <title>오늘은.</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var match = path.match(/^\/share\/([^\/]+)\/?$/);
+        if (!match) return;  // /share/* 가 아니면 그냥 404 화면
+
+        var payload = match[1];
+        var pkg = 'com.ssavice.today';
+        var fallbackUrl =
+          'https://play.google.com/store/apps/details?id=' + pkg;
+
+        // Android 만 intent:// 스킴 시도 — iOS/desktop 은 fallback 페이지에 머무름.
+        var ua = navigator.userAgent || '';
+        if (/Android/i.test(ua)) {
+          var intentUrl =
+            'intent://share/' + encodeURIComponent(payload) +
+            '#Intent;scheme=https;' +
+            'package=' + pkg + ';' +
+            'S.browser_fallback_url=' + encodeURIComponent(fallbackUrl) + ';' +
+            'end';
+          window.location.replace(intentUrl);
+        }
+      })();
+    </script>
+    <style>
+      body{font-family:-apple-system,sans-serif;background:#F5EFE4;color:#3D2817;
+           text-align:center;padding:60px 20px;line-height:1.6}
+      a{color:#7A2A1F}
+    </style>
+  </head>
+  <body>
+    <h2>오늘은.</h2>
+    <p>공유받은 노트를 열려면 앱이 필요해요.</p>
+    <p>
+      <a id="store" href="https://play.google.com/store/apps/details?id=com.ssavice.today">
+        Play Store 에서 받기
+      </a>
+    </p>
+  </body>
+  </html>
