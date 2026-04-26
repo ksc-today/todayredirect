@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+  <html lang="ko">                                                                                                                                                                                                                  
+  <head>
+    <meta charset="UTF-8">                                                                                                                                                                                                          
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>오늘은.</title>
+
+    <!-- OG meta — 메신저 프리뷰 카드. /todayredirect/share/?d=... 는 share/index.html 이
+         200 으로 서빙되니 카카오톡 크롤러가 카드를 만들어 줌. 정적이라 노트별 다른 값은 못 넣음. -->
+    <meta property="og:title" content="오늘은. — 노트 공유">
+    <meta property="og:description" content="누군가 당신에게 노트를 보냈어요. 앱에서 받아보세요.">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="ko_KR">
+
+    <style>
+      body{font-family:-apple-system,'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+           background:#F5EFE4;color:#3D2817;text-align:center;padding:60px 20px;line-height:1.5;margin:0}
+      h1{font-size:22px;margin:0;font-weight:600;letter-spacing:-0.3px;color:#7A2A1F}
+      .preview{margin:36px auto 28px;max-width:520px;min-height:96px}
+      .note-title{font-size:30px;font-weight:600;word-break:keep-all;color:#3D2817;
+                  opacity:0;transition:opacity 240ms ease}
+      .note-title.show{opacity:1}
+      .note-meta{margin-top:8px;color:#8B6F4E;font-size:14px;
+                 opacity:0;transition:opacity 240ms ease}
+      .note-meta.show{opacity:1}
+      .help{color:#8B6F4E;font-size:15px;margin-bottom:24px}
+      a.cta,button.cta{display:inline-block;background:#7A2A1F;color:#F5EFE4;
+            padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:600;
+            font-size:15px;border:none;cursor:pointer;font-family:inherit;margin:4px}
+      a.cta:hover,button.cta:hover{opacity:0.92}
+      .actions{display:flex;flex-direction:column;align-items:center;gap:8px}
+      /* 디버그 패널 — ?debug=1 일 때만 표시. */
+      #debug{display:none;margin:32px auto;max-width:560px;text-align:left;
+             background:#fff;border:1px solid #ddd;border-radius:8px;
+             font-family:Menlo,Consolas,monospace;font-size:11px;line-height:1.4;
+             padding:12px;white-space:pre-wrap;word-break:break-all;color:#333;
+             max-height:400px;overflow:auto}
+      #debug.show{display:block}
+      #debug .ok{color:#2a7a2a}
+      #debug .err{color:#a83030;font-weight:600}
+      #debug .step{color:#7A2A1F;font-weight:600}
+    </style>
+  </head>
+  <body>
+    <h1>오늘은.</h1>
+    <div class="preview">
+      <div id="note-title" class="note-title">&nbsp;</div>
+      <div id="note-meta" class="note-meta">&nbsp;</div>
+    </div>
+    <p class="help">이 노트를 받으려면 앱이 필요해요.</p>
+    <div class="actions">
+      <button id="open-app" class="cta" style="display:none">앱에서 열기</button>
+      <a class="cta" href="https://play.google.com/store/apps/details?id=com.ssavice.today">
+        Play Store 에서 받기
+      </a>
+    </div>
+    <div id="debug"></div>
+
+    <script>
+    (function () {
+      const PKG = 'com.ssavice.today';
+      const HOST = 'ksc-today.github.io';
+      const PATH_PREFIX = '/todayredirect/share/';
+      const FALLBACK_URL = 'https://play.google.com/store/apps/details?id=' + PKG;
+
+      // ---- Debug logger — 페이지에 표시 + console.log ----
+      const params = new URLSearchParams(window.location.search);
+      const debugMode = params.get('debug') === '1';
+      const debugEl = document.getElementById('debug');
+      if (debugMode) debugEl.classList.add('show');
+      function log(level, msg) {
+        const tag = level === 'err' ? '[ERR]' : level === 'ok' ? '[OK ]' : '[ . ]';
+        console.log(tag, msg);
+        if (debugMode) {
+          const line = document.createElement('div');
+          line.className = level;
+          line.textContent = tag + ' ' + msg;
+          debugEl.appendChild(line);
+        }
+      }
+      function logStep(s) { log('step', s); }
+      function logOk(s)   { log('ok', s); }
+      function logErr(s)  { log('err', s); }
+
+      logStep('share page loaded — pathname=' + window.location.pathname + ' search=' + window.location.search);
+
+      // ---- Payload 추출: query string 우선, path segment 폴백 ----
+      let payload = params.get('d');
+      if (payload) {
+        logOk('payload from query: length=' + payload.length);
+      } else {
+        // 구 형식 호환: /todayredirect/share/<payload>
+        const m = window.location.pathname.match(/^\/todayredirect\/share\/([^\/?#]+)\/?$/);
+        if (m) {
+          payload = m[1];
+          logOk('payload from path (legacy): length=' + payload.length);
+        } else {
+          logErr('no payload found in URL');
+          return;
+        }
+      }
+
+      const isAndroid = /Android/i.test(navigator.userAgent || '');
+      logStep('platform: ' + (isAndroid ? 'Android' : 'non-Android (' + (navigator.userAgent || '?') + ')'));
+
+      // ---- 올바른 intent URI: host/path 가 실제 https URL 과 동일해야 매칭. ----
+      const intentUrl =
+        'intent://' + HOST + PATH_PREFIX + '?d=' + encodeURIComponent(payload) +
+        '#Intent;scheme=https;package=' + PKG +
+        ';S.browser_fallback_url=' + encodeURIComponent(FALLBACK_URL) + ';end';
+
+      // ---- 1) 모든 플랫폼: 페이로드 디코딩 → 요약 표시 ----
+      decodeAndShow(payload).catch(function (e) { logErr('decodeAndShow failed: ' + (e && e.message || e)); });
+
+      // ---- 2) Android: 1.5s 후 자동 intent 발사 (검증된 App Link 면 페이지 로드 자체가
+      //        안 일어나니 도달 안 함; 도달했단 건 Chrome 주소창 / 인앱 webview 등 인터셉트
+      //        못한 경로). 사용자에게 잠깐 요약 보여준 뒤 앱 진입. ----
+      if (isAndroid) {
+        const btn = document.getElementById('open-app');
+        btn.style.display = 'inline-block';
+        btn.addEventListener('click', function () {
+          logStep('manual button → ' + intentUrl);
+          window.location.replace(intentUrl);
+        });
+        if (!debugMode) {
+          // debug 모드일 땐 자동 redirect 끔 (페이지 떠나면 로그 못 봄)
+          setTimeout(function () {
+            logStep('auto redirect → ' + intentUrl);
+            window.location.replace(intentUrl);
+          }, 1500);
+        } else {
+          logStep('debug mode: auto-redirect 비활성. 수동 버튼 사용.');
+        }
+      }
+    })();
+
+    async function decodeAndShow(payload) {
+      log('step', 'decodeAndShow: start');
+
+      const compressed = urlSafeB64ToBytes(payload);
+      log('ok', 'base64 → ' + compressed.length + ' bytes');
+
+      const cborBytes = await gunzip(compressed);
+      log('ok', 'gunzip → ' + cborBytes.length + ' bytes');
+
+      const dto = parseCbor(cborBytes);
+      log('ok', 'cbor parsed → keys=' + (dto && typeof dto === 'object' ? Object.keys(dto).join(',') : '(not object)'));
+
+      if (!dto || typeof dto !== 'object') {
+        log('err', 'dto is not an object');
+        return;
+      }
+      const title = typeof dto.title === 'string' ? dto.title.trim() : '';
+      const itemCount = Array.isArray(dto.items) ? dto.items.length : 0;
+      log('ok', 'title="' + title + '" items=' + itemCount + ' v=' + dto.v + ' type=' + dto.type);
+      if (!title) {
+        log('err', 'title is blank');
+        return;
+      }
+
+      const t = document.getElementById('note-title');
+      const m = document.getElementById('note-meta');
+      t.textContent = title;
+      t.classList.add('show');
+      m.textContent = '할 일 ' + itemCount + '개';
+      m.classList.add('show');
+      document.title = title + ' · 오늘은.';
+
+      function log(level, msg) {
+        const tag = level === 'err' ? '[ERR]' : level === 'ok' ? '[OK ]' : '[ . ]';
+        console.log(tag, msg);
+        const debugEl = document.getElementById('debug');
+        if (debugEl && debugEl.classList.contains('show')) {
+          const line = document.createElement('div');
+          line.className = level;
+          line.textContent = tag + ' ' + msg;
+          debugEl.appendChild(line);
+        }
+      }
+    }
+
+    function urlSafeB64ToBytes(s) {
+      s = s.replace(/-/g, '+').replace(/_/g, '/');
+      while (s.length % 4) s += '=';
+      const raw = atob(s);
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out;
+    }
+
+    // 모던 브라우저 native gunzip — Response/DecompressionStream 파이프라인이 가장 안정.
+    async function gunzip(bytes) {
+      const stream = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip'));
+      const buf = await new Response(stream).arrayBuffer();
+      return new Uint8Array(buf);
+    }
+
+    // kotlinx-serialization-cbor 의 default 출력 (definite-length, string-key map) 만 처리.
+    function parseCbor(bytes) {
+      let i = 0;
+      function readArg(b) {
+        const a = b & 0x1F;
+        if (a < 24) return a;
+        if (a === 24) return bytes[i++];
+        if (a === 25) { const v = (bytes[i] << 8) | bytes[i+1]; i += 2; return v; }
+        if (a === 26) {
+          const v = ((bytes[i] << 24) | (bytes[i+1] << 16) | (bytes[i+2] << 8) | bytes[i+3]) >>> 0;
+          i += 4; return v;
+        }
+        if (a === 27) { i += 8; return 0; }
+        throw new Error('cbor unsupported arg ' + a);
+      }
+      function read() {
+        const b = bytes[i++];
+        const major = b >> 5;
+        if ((b & 0x1F) === 31) throw new Error('cbor indefinite-length unsupported');
+        const arg = readArg(b);
+        if (major === 0) return arg;
+        if (major === 1) return -1 - arg;
+        if (major === 2) { const buf = bytes.slice(i, i + arg); i += arg; return buf; }
+        if (major === 3) {
+          const buf = bytes.slice(i, i + arg); i += arg;
+          return new TextDecoder('utf-8').decode(buf);
+        }
+        if (major === 4) {
+          const arr = []; for (let j = 0; j < arg; j++) arr.push(read()); return arr;
+        }
+        if (major === 5) {
+          const m = {};
+          for (let j = 0; j < arg; j++) { const k = read(); m[k] = read(); }
+          return m;
+        }
+        if (major === 6) return read();
+        if (major === 7) {
+          if (arg === 22 || arg === 23) return null;
+          if (arg === 21) return true;
+          if (arg === 20) return false;
+          throw new Error('cbor major7 arg ' + arg);
+        }
+        throw new Error('cbor major ' + major);
+      }
+      return read();
+    }
+    </script>
+  </body>
+  </html>
